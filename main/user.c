@@ -2,6 +2,8 @@
 #include "button.h"
 #include "http_page_tpl.h"
 
+#include "ipwm.h"
+
 #define USER_HTTP_CLIENT
 //#define USER_CONFIG_RELAY_GPIO
 //#define USER_CONFIG_LED_GPIO
@@ -36,11 +38,21 @@ relay_handle_t relay_led_h;
 
 #define USER_PARAM_SONOFF_LIGHT_SECTION USER_GET_PARAM1_TAG
 
+
+#define DUTY_DAY 0
+#define DUTY_NIGHT 190
+#define DUTY_OFF 255
+#define TIME_START_NIGHT 1320 // minutes of day
+#define TIME_STOP_NIGHT 420 // minutes of day
+
 const char *html_page_config_buttons ICACHE_RODATA_ATTR = "<h4>Button options:</h4>";
 
 //#ifdef USER_CONFIG_RELAY_GPIO
 //const char *html_page_config_gpio_relay ICACHE_RODATA_ATTR = "Relay GPIO";
 //const char *html_page_config_gpio_relay_name ICACHE_RODATA_ATTR = "relpin";
+
+
+
 const char *html_page_config_gpio_relay_save_title ICACHE_RODATA_ATTR = "Save light state";
 const char *html_page_config_gpio_relay_save_name ICACHE_RODATA_ATTR = "rsv";
 const char *html_page_config_gpio_relay_state_name ICACHE_RODATA_ATTR = "rst";
@@ -190,10 +202,13 @@ void user_setup(void *args)
 
     ESP_LOGW(TAG, LOG_FMT("relay_h = %p"), relay_h);
     
-    relay_led_h = relay_create( "Led", blue_led_gpio, RELAY_LEVEL_HIGH /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ , false);
-    relay_write(relay_led_h,  (relay_save) ? !relay_state : RELAY_STATE_OPEN);    
-    ESP_LOGW(TAG, LOG_FMT("relay_led_h = %p"), relay_led_h);
+    //relay_led_h = relay_create( "Led", blue_led_gpio, RELAY_LEVEL_HIGH /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ , false);
+    //relay_write(relay_led_h,  (relay_save) ? !relay_state : RELAY_STATE_OPEN);    
+    //ESP_LOGW(TAG, LOG_FMT("relay_led_h = %p"), relay_led_h);
+    uint32_t *ch = &blue_led_gpio;
 
+    pwm_begin(PWM_FREQ_HZ, 1, ch);
+    pwm_start();
     //relay_handle_t relay2_h = relay_create( "red", 15, RELAY_LEVEL_LOW /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ , false);
     //relay_write(relay2_h,  RELAY_STATE_CLOSE); 
 
@@ -263,6 +278,31 @@ void user_mqtt_init(void *args)
 // функция вызывает в основном цикле каждую секунду
 void user_loop(uint32_t sec)
 {
+    uint8_t level = gpio_get_level( ((relay_t *)relay_h)->pin );
+
+    struct tm timeinfo;
+    get_timeinfo(&timeinfo);
+
+
+    uint16_t minutes = timeinfo.tm_hour * timeinfo.tm_min;
+
+    if (  !level )
+    {
+        if ( (minutes >= TIME_START_NIGHT || minutes <= TIME_STOP_NIGHT) && ( timeinfo.tm_year >  (2016 - 1900) ))
+        {
+            pwm_write(0, DUTY_NIGHT);   
+        }
+        else    
+        {
+            pwm_write(0, DUTY_DAY);   
+        }
+    }
+    else
+    {
+        pwm_write(0, DUTY_OFF);   
+    }
+        
+    pwm_start();  
 }
 
 #ifdef CONFIG_USER_WEB_PRINT
@@ -358,6 +398,7 @@ void user_web_options(httpd_req_t *req)
                                 , !relay_save  // %d value
                                 , relay_save ? "checked" : ""
                                 );
+
 
     // print led gpio
     // #ifdef USER_CONFIG_LED_GPIO
@@ -497,7 +538,7 @@ void IRAM_ATTR button_press_handler(void *args)
             relay_state = relay_read(relay_h);
             relay_state = !relay_state;
             relay_write(relay_h, relay_state);  
-            relay_write(relay_led_h, !relay_state);    
+            //relay_write(relay_led_h, !relay_state);   
 
             if ( relay_save ) {
                 ESP_LOGW(TAG, "save relay_state = %d", relay_state);
