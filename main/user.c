@@ -188,8 +188,11 @@ void user_setup(void *args)
     relay_h = relay_create( "Light", relay_gpio, RELAY_LEVEL_LOW /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ , relay_save);
     relay_write(relay_h,  (relay_save) ? relay_state : RELAY_STATE_CLOSE);    
 
+    ESP_LOGW(TAG, LOG_FMT("relay_h = %p"), relay_h);
+    
     relay_led_h = relay_create( "Led", blue_led_gpio, RELAY_LEVEL_HIGH /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ , false);
     relay_write(relay_led_h,  (relay_save) ? !relay_state : RELAY_STATE_OPEN);    
+    ESP_LOGW(TAG, LOG_FMT("relay_led_h = %p"), relay_led_h);
 
     //relay_handle_t relay2_h = relay_create( "red", 15, RELAY_LEVEL_LOW /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ , false);
     //relay_write(relay2_h,  RELAY_STATE_CLOSE); 
