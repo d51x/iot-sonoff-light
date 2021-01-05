@@ -283,7 +283,6 @@ void user_loop(uint32_t sec)
     struct tm timeinfo;
     get_timeinfo(&timeinfo);
 
-
     uint16_t minutes = timeinfo.tm_hour * timeinfo.tm_min;
 
     if (  !level )
