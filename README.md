@@ -1,4 +1,4 @@
-# esp-iot-home
+# esp-iot-sonoff-light
 
 # Как собрать проект?
 

@@ -1,1 +1,1 @@
-iot-home
+iot-sonoff-light
