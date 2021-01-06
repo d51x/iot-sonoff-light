@@ -58,6 +58,16 @@ const char *html_page_config_gpio_relay_save_name ICACHE_RODATA_ATTR = "rsv";
 const char *html_page_config_gpio_relay_state_name ICACHE_RODATA_ATTR = "rst";
 //#endif
 
+const char *html_page_config_blue_led_config_title ICACHE_RODATA_ATTR = "<h4>Blue led:</h4>";
+const char *html_page_config_duty_night_title ICACHE_RODATA_ATTR = "Duty night";
+const char *html_page_config_duty_night_name ICACHE_RODATA_ATTR = "dtn";
+const char *html_page_config_duty_day_title ICACHE_RODATA_ATTR = "Duty day";
+const char *html_page_config_duty_day_name ICACHE_RODATA_ATTR = "dtd";
+const char *html_page_config_night_start_title ICACHE_RODATA_ATTR = "Dark start (minutes)";
+const char *html_page_config_night_start_name ICACHE_RODATA_ATTR = "drks";
+const char *html_page_config_night_stop_title ICACHE_RODATA_ATTR = "Dark finish (minutes)";
+const char *html_page_config_night_stop_name ICACHE_RODATA_ATTR = "drkf";
+
 const char *html_page_config_gpio_button ICACHE_RODATA_ATTR = "Button GPIO";
 const char *html_page_config_gpio_button_name ICACHE_RODATA_ATTR = "bpin";
 
@@ -85,7 +95,12 @@ uint8_t relay_gpio = SONOFF_LIGHT_RELAY_GPIO;
 relay_state_t relay_state = RELAY_STATE_CLOSE;
 uint8_t relay_save = 0;
 uint8_t button_gpio = SONOFF_LIGHT_BUTTON_GPIO;
-uint8_t blue_led_gpio = SONOFF_LIGHT_BLUE_LED_GPIO;
+uint32_t blue_led_gpio = SONOFF_LIGHT_BLUE_LED_GPIO;
+
+uint8_t duty_night = DUTY_NIGHT;
+uint8_t duty_day = DUTY_DAY;
+uint16_t dark_start = TIME_START_NIGHT;
+uint16_t dark_stop = TIME_STOP_NIGHT;
 
 typedef enum {
       USR_BUTTON_SHORT_PRESS_1
@@ -207,7 +222,7 @@ void user_setup(void *args)
     uint32_t *ch = &blue_led_gpio;
 
     pwm_begin(PWM_FREQ_HZ, 1, ch);
-    pwm_start();
+    //pwm_start();
     //relay_handle_t relay2_h = relay_create( "red", 15, RELAY_LEVEL_LOW /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ , false);
     //relay_write(relay2_h,  RELAY_STATE_CLOSE); 
 
@@ -282,17 +297,23 @@ void user_loop(uint32_t sec)
     struct tm timeinfo;
     get_timeinfo(&timeinfo);
 
-    uint16_t minutes = timeinfo.tm_hour * timeinfo.tm_min;
+    uint16_t minutes = timeinfo.tm_hour * 60 + timeinfo.tm_min;
 
     if (  !level )
     {
-        if ( (minutes >= TIME_START_NIGHT || minutes <= TIME_STOP_NIGHT) && ( timeinfo.tm_year >  (2016 - 1900) ))
+        ESP_LOGW(TAG, "minutes = %d, night start = %d, stop = %d, duty night = %d, day = %d"
+                    , minutes
+                    , dark_start
+                    , dark_stop
+                    , duty_night
+                    , duty_day);
+        if ( (minutes >= dark_start || minutes <= dark_stop) && ( timeinfo.tm_year >  (2016 - 1900) ))
         {
-            pwm_write(0, DUTY_NIGHT);   
+            pwm_write(0, duty_night);   
         }
         else    
         {
-            pwm_write(0, DUTY_DAY);   
+            pwm_write(0, duty_day);   
         }
     }
     else
@@ -398,6 +419,36 @@ void user_web_options(httpd_req_t *req)
                                 );
 
 
+    
+    httpd_resp_sendstr_chunk(req, html_page_config_blue_led_config_title);
+    itoa(duty_night, value, 10);    
+    httpd_resp_sendstr_chunk_fmt(req, html_block_data_form_item_label_edit
+                                    , html_page_config_duty_night_title // %s label
+                                    , html_page_config_duty_night_name   // %s name
+                                    , value   // %d value
+    );
+
+    itoa(duty_day, value, 10);    
+    httpd_resp_sendstr_chunk_fmt(req, html_block_data_form_item_label_edit
+                                    , html_page_config_duty_day_title // %s label
+                                    , html_page_config_duty_day_name   // %s name
+                                    , value   // %d value
+    );
+
+    itoa(dark_start, value, 10);    
+    httpd_resp_sendstr_chunk_fmt(req, html_block_data_form_item_label_edit
+                                    , html_page_config_night_start_title // %s label
+                                    , html_page_config_night_start_name   // %s name
+                                    , value   // %d value
+    );    
+
+    itoa(dark_stop, value, 10);    
+    httpd_resp_sendstr_chunk_fmt(req, html_block_data_form_item_label_edit
+                                    , html_page_config_night_stop_title // %s label
+                                    , html_page_config_night_stop_name   // %s name
+                                    , value   // %d value
+    );
+
     // print led gpio
     // #ifdef USER_CONFIG_LED_GPIO
     // itoa(blue_led_gpio, value, 10);    
@@ -464,6 +515,11 @@ void user_process_param(httpd_req_t *req, void *args)
 
     http_get_key_uint8_def(req, html_page_config_gpio_button_name, &button_gpio, SONOFF_LIGHT_BUTTON_GPIO);
     http_get_key_uint8_def(req, html_page_config_gpio_relay_save_name, &relay_save, 0);
+
+    http_get_key_uint8_def(req, html_page_config_duty_night_name, &duty_night, DUTY_NIGHT);
+    http_get_key_uint8_def(req, html_page_config_duty_day_name, &duty_day, DUTY_DAY);
+    http_get_key_uint16_def(req, html_page_config_night_start_name, &dark_start, TIME_START_NIGHT);
+    http_get_key_uint16_def(req, html_page_config_night_stop_name, &dark_stop, TIME_STOP_NIGHT);
 
 ESP_LOGW(TAG, "relay_save = %d", relay_save);
     //#ifdef USER_CONFIG_LED_GPIO
@@ -575,6 +631,11 @@ void user_load_nvs()
     nvs_param_u8_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_button_name, &button_gpio, SONOFF_LIGHT_BUTTON_GPIO);
     nvs_param_u8_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_relay_save_name, &relay_save, 0);
     
+    nvs_param_u8_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_duty_night_name, &duty_night, DUTY_NIGHT);
+    nvs_param_u8_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_duty_day_name, &duty_day, DUTY_DAY);
+    nvs_param_u16_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_night_start_name, &dark_start, TIME_START_NIGHT);
+    nvs_param_u16_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_night_stop_name, &dark_stop, TIME_STOP_NIGHT);
+    
     if ( relay_save ) {
         nvs_param_u8_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_relay_state_name, &relay_state, 0);
     }
@@ -627,6 +688,11 @@ void user_save_nvs()
     ESP_LOGW(TAG, LOG_FMT("save %s"), html_page_config_gpio_relay_save_name);
     nvs_param_u8_save(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_relay_save_name, relay_save);
     
+    nvs_param_u8_save(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_duty_night_name, duty_night);
+    nvs_param_u8_save(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_duty_day_name, duty_day);
+    nvs_param_u16_save(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_night_start_name, dark_start);
+    nvs_param_u16_save(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_night_stop_name, dark_stop);
+        
     //#ifdef USER_CONFIG_LED_GPIO
     //nvs_param_u8_save(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_led_name, blue_led_gpio);
     //#endif
