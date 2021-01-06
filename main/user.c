@@ -15,15 +15,15 @@
 static const char *TAG = "USER";
 
 #define SONOFF_LIGHT_RELAY_GPIO 12
-#define SONOFF_LIGHT_BUTTON_GPIO 4          // mini: 4; touch 1 gang: 0 
-#define SONOFF_LIGHT_BLUE_LED_GPIO 2
+#define SONOFF_LIGHT_BUTTON_GPIO 0          // mini: 4; touch 1 gang: 0 
+#define SONOFF_LIGHT_BLUE_LED_GPIO 13
 
 relay_handle_t relay_led_h;
 
 #define BUTTON_SHORT_PRESS_DELAY 400
-#define BUTTON_SHORT_PRESS_COUNT 2
+#define BUTTON_SHORT_PRESS_COUNT 3
 
-#define BUTTON_LONG_PRESS_COUNT 1
+#define BUTTON_LONG_PRESS_COUNT 2
 #define BUTTON_LONG_PRESS_1_DELAY 1
 #if BUTTON_LONG_PRESS_COUNT > 1
 #define BUTTON_LONG_PRESS_2_DELAY 2
@@ -68,6 +68,12 @@ const char *html_page_config_night_start_name ICACHE_RODATA_ATTR = "drks";
 const char *html_page_config_night_stop_title ICACHE_RODATA_ATTR = "Dark finish (minutes)";
 const char *html_page_config_night_stop_name ICACHE_RODATA_ATTR = "drkf";
 
+const char *html_page_config_rcdata_title ICACHE_RODATA_ATTR = "RC Codes[4] (mqtt)";
+const char *html_page_config_rcdata_name ICACHE_RODATA_ATTR = "rcdata";
+
+const char *html_page_config_rctopic_title ICACHE_RODATA_ATTR = "RC Topic (mqtt)";
+const char *html_page_config_rctopic_name ICACHE_RODATA_ATTR = "rctopic";
+
 const char *html_page_config_gpio_button ICACHE_RODATA_ATTR = "Button GPIO";
 const char *html_page_config_gpio_button_name ICACHE_RODATA_ATTR = "bpin";
 
@@ -101,6 +107,18 @@ uint8_t duty_night = DUTY_NIGHT;
 uint8_t duty_day = DUTY_DAY;
 uint16_t dark_start = TIME_START_NIGHT;
 uint16_t dark_stop = TIME_STOP_NIGHT;
+
+#define RC_TOPIC_LENGTH 32
+char rctopic[RC_TOPIC_LENGTH];
+
+#define RC_DATA_COUNT 4
+#define RC_DATA_LEN 10
+typedef struct {
+    char rccode[RC_DATA_LEN];
+} rcdata_t;
+
+uint8_t rccode_first[RC_DATA_COUNT];
+rcdata_t rcdata[RC_DATA_COUNT];
 
 typedef enum {
       USR_BUTTON_SHORT_PRESS_1
@@ -199,8 +217,22 @@ button_press_type_t button_press_config[USR_BUTTON_MAX] =
     #endif
 };
 
+
 void user_load_nvs();
 void user_save_nvs();
+
+void switch_local_gpio()
+{
+    relay_state = relay_read(relay_h);
+    relay_state = !relay_state;
+    relay_write(relay_h, relay_state);  
+    //relay_write(relay_led_h, !relay_state);   
+
+    if ( relay_save ) {
+        ESP_LOGW(TAG, "save relay_state = %d", relay_state);
+        nvs_param_u8_save(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_relay_state_name, relay_state);
+    }
+}
 
 void user_setup(void *args)
 {
@@ -283,10 +315,31 @@ void user_http_init(void *args)
    
 }
 
+static void rcdata_recv_cb(char *buf, void *args)
+{
+    //uint8_t value = atoi( buf );
+    ESP_LOGW(TAG, "%s: rcdata = %s", __func__, buf);
+    for ( uint8_t i = 0; i < RC_DATA_COUNT; i++)
+    {
+        if ( strcmp(buf, rcdata[i].rccode) == 0 )
+        {
+            if ( rccode_first[i] == 0 )
+            {
+                switch_local_gpio();
+            }
+            rccode_first[i] = 0;
+            break; // достаточно одного из 4-х совпадений по коду 
+        }
+    }
+}
+
 // функция вызывается после user_setup и старта mqtt
 // в этой функции можно зарегистрировать свои кастомные колбеки на отправку и получение данных
 void user_mqtt_init(void *args)
 {
+    // TODO: check topic length and NULL
+    memset(&rccode_first, 1, sizeof(uint8_t) * RC_DATA_COUNT);
+    mqtt_add_receive_callback(rctopic, 0, rcdata_recv_cb, NULL);
 }
 
 // функция вызывает в основном цикле каждую секунду
@@ -301,12 +354,12 @@ void user_loop(uint32_t sec)
 
     if (  !level )
     {
-        ESP_LOGW(TAG, "minutes = %d, night start = %d, stop = %d, duty night = %d, day = %d"
-                    , minutes
-                    , dark_start
-                    , dark_stop
-                    , duty_night
-                    , duty_day);
+        // ESP_LOGW(TAG, "minutes = %d, night start = %d, stop = %d, duty night = %d, day = %d"
+        //             , minutes
+        //             , dark_start
+        //             , dark_stop
+        //             , duty_night
+        //             , duty_day);
         if ( (minutes >= dark_start || minutes <= dark_stop) && ( timeinfo.tm_year >  (2016 - 1900) ))
         {
             pwm_write(0, duty_night);   
@@ -449,6 +502,29 @@ void user_web_options(httpd_req_t *req)
                                     , value   // %d value
     );
 
+    httpd_resp_sendstr_chunk_fmt(req, html_block_data_form_item_label_edit
+                                    , html_page_config_rctopic_title // %s label
+                                    , html_page_config_rctopic_name   // %s name
+                                    , rctopic   // %d value
+    );
+
+    // rcdata
+    char srcdata[ sizeof(rcdata_t) * RC_DATA_COUNT + RC_DATA_COUNT] = "";
+    for (uint8_t i=0; i<RC_DATA_COUNT;i++)
+    {
+        if ( strlen(rcdata[i].rccode) > 0 )
+        {
+            strcat(srcdata, rcdata[i].rccode);
+            if ( i < RC_DATA_COUNT-1 ) strcat(srcdata, ";");
+        }
+    }
+    
+    httpd_resp_sendstr_chunk_fmt(req, html_block_data_form_item_label_edit
+                                    , html_page_config_rcdata_title // %s label
+                                    , html_page_config_rcdata_name   // %s name
+                                    , srcdata   // %d value
+    );
+
     // print led gpio
     // #ifdef USER_CONFIG_LED_GPIO
     // itoa(blue_led_gpio, value, 10);    
@@ -514,12 +590,44 @@ void user_process_param(httpd_req_t *req, void *args)
     //#endif
 
     http_get_key_uint8_def(req, html_page_config_gpio_button_name, &button_gpio, SONOFF_LIGHT_BUTTON_GPIO);
-    http_get_key_uint8_def(req, html_page_config_gpio_relay_save_name, &relay_save, 0);
-
+    
+    relay_save = ( http_get_key_str(req, html_page_config_gpio_relay_save_name, param, 20) == ESP_OK );
+    
     http_get_key_uint8_def(req, html_page_config_duty_night_name, &duty_night, DUTY_NIGHT);
     http_get_key_uint8_def(req, html_page_config_duty_day_name, &duty_day, DUTY_DAY);
     http_get_key_uint16_def(req, html_page_config_night_start_name, &dark_start, TIME_START_NIGHT);
     http_get_key_uint16_def(req, html_page_config_night_stop_name, &dark_stop, TIME_STOP_NIGHT);
+
+    memset(rctopic, 0, RC_TOPIC_LENGTH);
+    memset(param, 0, RC_TOPIC_LENGTH);
+    http_get_key_str(req, html_page_config_rctopic_name, param, RC_TOPIC_LENGTH);
+
+    mqtt_del_receive_callback(rctopic, 0, rcdata_recv_cb, NULL);
+    url_decode(param, rctopic);
+    mqtt_add_receive_callback(rctopic, 0, rcdata_recv_cb, NULL);
+
+    ESP_LOGW(TAG, "rctopic = %s", rctopic);
+
+    memset(param, 0, RC_DATA_LEN*RC_DATA_COUNT);
+    if ( http_get_key_str(req, html_page_config_rcdata_name, param, RC_DATA_LEN*RC_DATA_COUNT) == ESP_OK )
+    {
+        
+        char srcdata[sizeof(rcdata_t)*RC_DATA_COUNT + RC_DATA_COUNT];
+        url_decode(param, srcdata);
+        ESP_LOGW(TAG, "s_rcdata = %s", srcdata);
+        memset(&rcdata, 0, sizeof(rcdata_t)*RC_DATA_COUNT);
+        char *e = malloc(1);
+        uint8_t k = 0;
+        while ( e != NULL )
+        {
+            e = cut_str_from_str(srcdata, ";");
+            ESP_LOGW(TAG, "split rcdata: %d, e = %s, srcdata = %s, len = %d", k, e, srcdata, strlen(srcdata));
+            if ( e == NULL && strlen(srcdata) == 0) break;
+            strcpy(rcdata[k].rccode, e);
+            k++;
+        }        
+        free(e);
+    }
 
 ESP_LOGW(TAG, "relay_save = %d", relay_save);
     //#ifdef USER_CONFIG_LED_GPIO
@@ -589,16 +697,7 @@ void IRAM_ATTR button_press_handler(void *args)
     {
         case USR_BUTTON_ACTION_LOCAL_GPIO:
         {
-            relay_state = relay_read(relay_h);
-            relay_state = !relay_state;
-            relay_write(relay_h, relay_state);  
-            //relay_write(relay_led_h, !relay_state);   
-
-            if ( relay_save ) {
-                ESP_LOGW(TAG, "save relay_state = %d", relay_state);
-                nvs_param_u8_save(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_relay_state_name, relay_state);
-            }
-
+            switch_local_gpio();
             break;
         }
         
@@ -636,6 +735,16 @@ void user_load_nvs()
     nvs_param_u16_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_night_start_name, &dark_start, TIME_START_NIGHT);
     nvs_param_u16_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_night_stop_name, &dark_stop, TIME_STOP_NIGHT);
     
+    nvs_param_str_load(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_rctopic_name, &rctopic);
+    ESP_LOGW(TAG, "loaded rctopic = %s", rctopic);
+
+    nvs_param_load(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_rcdata_name, &rcdata);
+    
+    for ( uint8_t i = 0; i < RC_DATA_COUNT; i++ )
+    {
+        ESP_LOGW(TAG, "loaded rcdata[%d] = %s", i, rcdata[i].rccode);
+    }
+
     if ( relay_save ) {
         nvs_param_u8_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_relay_state_name, &relay_state, 0);
     }
@@ -693,6 +802,9 @@ void user_save_nvs()
     nvs_param_u16_save(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_night_start_name, dark_start);
     nvs_param_u16_save(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_night_stop_name, dark_stop);
         
+    esp_err_t err = nvs_param_str_save(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_rctopic_name, rctopic);
+    ESP_LOGW(TAG, "save rctopic (%s), err = %d", rctopic, err);
+    nvs_param_save(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_rcdata_name, rcdata, sizeof(rcdata_t) * RC_DATA_COUNT);
     //#ifdef USER_CONFIG_LED_GPIO
     //nvs_param_u8_save(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_led_name, blue_led_gpio);
     //#endif
