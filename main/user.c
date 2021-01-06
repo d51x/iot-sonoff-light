@@ -70,7 +70,6 @@ const char *html_page_config_button_value_name ICACHE_RODATA_ATTR = "sv%d";
 const char *html_page_config_button_delay_name ICACHE_RODATA_ATTR = "sd%d";
 
 #define USER_SELECT "sel%d"
-const char *html_page_config_btn_cfg_start ICACHE_RODATA_ATTR =  "<div>";
 const char *html_page_config_select_start ICACHE_RODATA_ATTR =  "<select name=\""USER_SELECT"\">";
 
 #define BUTTON_VALUE_INT_SIZE 4    
@@ -332,15 +331,15 @@ static void user_print_button_config(httpd_req_t *req, uint8_t id)
     char s[10];
     itoa(id, s, 10);
 
-    httpd_resp_sendstr_chunk(req, html_page_config_btn_cfg_start);
+    //httpd_resp_sendstr_chunk(req, html_page_config_btn_cfg_start);
 
-    httpd_resp_sendstr_chunk(req, "<p>");
+    //httpd_resp_sendstr_chunk(req, "<p>");
     
     httpd_resp_sendstr_chunk_fmt(req, html_block_data_form_item_label, button_types[id]);
 
     user_print_select(req, id, button_press_config[id].action);
 
-    httpd_resp_sendstr_chunk(req, "</p>");
+    //httpd_resp_sendstr_chunk(req, "</p>");
 
     if ( button_press_config[id].action > USR_BUTTON_ACTION_LOCAL_GPIO )
     {
@@ -363,7 +362,7 @@ static void user_print_button_config(httpd_req_t *req, uint8_t id)
                                         , d
         );
     } 
-    httpd_resp_sendstr_chunk(req, html_block_data_end);
+    //httpd_resp_sendstr_chunk(req, html_block_data_end);
 }
 
 void user_web_options(httpd_req_t *req)
@@ -395,7 +394,7 @@ void user_web_options(httpd_req_t *req)
                                 , html_page_config_gpio_relay_save_title // %s label
                                 , html_page_config_gpio_relay_save_name   // %s name
                                 , !relay_save  // %d value
-                                , relay_save ? "checked" : ""
+                                , relay_save ? html_checkbox_checked : ""
                                 );
 
 
@@ -432,7 +431,7 @@ void user_web_options(httpd_req_t *req)
 
     httpd_resp_sendstr_chunk_fmt(req, html_block_data_form_submit, USER_GET_PARAM1_TAG);
     httpd_resp_sendstr_chunk(req, html_block_data_form_end);
-    httpd_resp_sendstr_chunk(req, html_block_data_end);
+    //httpd_resp_sendstr_chunk(req, html_block_data_end);
 
 }
 
