@@ -92,16 +92,16 @@ void initialize_modules()
 
     //#define RELAY_LED_PIN 2
     //relay_h = relay_create( "Led", RELAY_LED_PIN, RELAY_LEVEL_HIGH /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ , false);
-    //relay_write(relay_h,  RELAY_STATE_CLOSE);
+    //relay_write(relay_h,  RELAY_STATE_OFF);
 
     // relay_red_h = relay_create( "Red", 15, RELAY_LEVEL_LOW /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ );
-    // relay_write(relay_red_h,  RELAY_STATE_CLOSE);
+    // relay_write(relay_red_h,  RELAY_STATE_OFF);
 
     // relay_green_h = relay_create( "Green", 12, RELAY_LEVEL_LOW /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ );
-    // relay_write(relay_green_h,  RELAY_STATE_CLOSE);
+    // relay_write(relay_green_h,  RELAY_STATE_OFF);
 
     // relay_blue_h = relay_create( "Blue", 13, RELAY_LEVEL_LOW /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ );
-    // relay_write(relay_blue_h,  RELAY_STATE_CLOSE);   
+    // relay_write(relay_blue_h,  RELAY_STATE_OFF);   
 
         #ifdef CONFIG_RELAY_HTTP
         http_handlers_count += RELAY_HANDLERS_COUNT;

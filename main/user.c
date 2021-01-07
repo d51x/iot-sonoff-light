@@ -55,7 +55,7 @@ const char *html_page_config_buttons ICACHE_RODATA_ATTR = "<h4>Button options:</
 
 const char *html_page_config_gpio_relay_save_title ICACHE_RODATA_ATTR = "Save light state";
 const char *html_page_config_gpio_relay_save_name ICACHE_RODATA_ATTR = "rsv";
-const char *html_page_config_gpio_relay_state_name ICACHE_RODATA_ATTR = "rst";
+//const char *html_page_config_gpio_relay_state_name ICACHE_RODATA_ATTR = "rst";
 //#endif
 
 const char *html_page_config_blue_led_config_title ICACHE_RODATA_ATTR = "<h4>Blue led:</h4>";
@@ -98,7 +98,7 @@ const char *html_page_config_select_start ICACHE_RODATA_ATTR =  "<select name=\"
 void button_press_handler(void *args);
 
 uint8_t relay_gpio = SONOFF_LIGHT_RELAY_GPIO;
-relay_state_t relay_state = RELAY_STATE_CLOSE;
+//relay_state_t relay_state = RELAY_STATE_OFF;
 uint8_t relay_save = 0;
 uint8_t button_gpio = SONOFF_LIGHT_BUTTON_GPIO;
 uint32_t blue_led_gpio = SONOFF_LIGHT_BLUE_LED_GPIO;
@@ -221,20 +221,6 @@ button_press_type_t button_press_config[USR_BUTTON_MAX] =
 void user_load_nvs();
 void user_save_nvs();
 
-void switch_local_gpio()
-{
-    ESP_LOGW(TAG, "%s", __func__);
-    relay_state = relay_read(relay_h);
-    relay_state = !relay_state;
-    relay_write(relay_h, relay_state);  
-    //relay_write(relay_led_h, !relay_state);   
-
-    if ( relay_save ) {
-        ESP_LOGW(TAG, "save relay_state = %d", relay_state);
-        nvs_param_u8_save(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_relay_state_name, relay_state);
-    }
-}
-
 void user_setup(void *args)
 {
     user_load_nvs();
@@ -242,22 +228,23 @@ void user_setup(void *args)
     #ifdef CONFIG_COMPONENT_RELAY
 
     ESP_LOGW(TAG, LOG_FMT("relay_save = %d"), relay_save);
-    ESP_LOGW(TAG, LOG_FMT("relay_state = %d"), relay_state);
+    //ESP_LOGW(TAG, LOG_FMT("relay_state = %d"), relay_state);
 
-    relay_h = relay_create( "Light", relay_gpio, RELAY_LEVEL_LOW /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ , relay_save);
-    relay_write(relay_h,  (relay_save) ? relay_state : RELAY_STATE_CLOSE);    
+    relay_h = relay_create( "Light", relay_gpio, RELAY_LEVEL_HIGH /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ , relay_save);
+    // эту инициализацию состояния перенес в relay
+    //relay_write(relay_h,  (relay_save) ? relay_state : RELAY_STATE_OFF);    
     
     //relay_led_h = relay_create( "Led", blue_led_gpio, RELAY_LEVEL_HIGH /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ , false);
-    //relay_write(relay_led_h,  (relay_save) ? !relay_state : RELAY_STATE_OPEN);    
+    //relay_write(relay_led_h,  (relay_save) ? !relay_state : RELAY_STATE_OFF);    
     uint32_t *ch = &blue_led_gpio;
 
     pwm_begin(PWM_FREQ_HZ, 1, ch);
     //pwm_start();
     //relay_handle_t relay2_h = relay_create( "red", 15, RELAY_LEVEL_LOW /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ , false);
-    //relay_write(relay2_h,  RELAY_STATE_CLOSE); 
+    //relay_write(relay2_h,  RELAY_STATE_OFF); 
 
     //relay_handle_t relay3_h = relay_create( "blue", 13, RELAY_LEVEL_LOW /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ , false);
-    //relay_write(relay3_h,  RELAY_STATE_CLOSE);
+    //relay_write(relay3_h,  RELAY_STATE_OFF);
 
     //button_handle_t btn_g4_h = configure_push_button(GPIO_NUM_4, BUTTON_ACTIVE_HIGH);
     button_handle_t btn_h = configure_push_button(button_gpio, BUTTON_ACTIVE_LOW);
@@ -325,7 +312,7 @@ static void rcdata_recv_cb(char *buf, void *args)
             ESP_LOGW(TAG, "rcdata ready = %d", rccode_ready[i]);
             if ( rccode_ready[i] >= 2)
             {
-                switch_local_gpio();
+                relay_toggle(relay_h);
             }
             rccode_ready[i]++;
             break; // достаточно одного из 4-х совпадений по коду 
@@ -699,7 +686,7 @@ void IRAM_ATTR button_press_handler(void *args)
     {
         case USR_BUTTON_ACTION_LOCAL_GPIO:
         {
-            switch_local_gpio();
+            relay_toggle(relay_h);
             break;
         }
         
@@ -747,9 +734,9 @@ void user_load_nvs()
     //     ESP_LOGW(TAG, "loaded rcdata[%d] = %s", i, rcdata[i].rccode);
     // }
 
-    if ( relay_save ) {
-        nvs_param_u8_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_relay_state_name, &relay_state, 0);
-    }
+    // if ( relay_save ) {
+    //     nvs_param_u8_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_relay_state_name, &relay_state, 0);
+    // }
     //#ifdef USER_CONFIG_LED_GPIO
     //nvs_param_u8_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_led_name, &blue_led_gpio, SONOFF_LIGHT_BLUE_LED_GPIO);
     //#endif
