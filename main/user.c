@@ -19,6 +19,7 @@ static const char *TAG = "USER";
 #define SONOFF_LIGHT_BLUE_LED_GPIO 13
 
 relay_handle_t relay_led_h;
+relay_handle_t relay_add_h;
 
 #define BUTTON_SHORT_PRESS_DELAY 200
 #define BUTTON_SHORT_PRESS_COUNT 3
@@ -55,8 +56,6 @@ const char *html_page_config_buttons ICACHE_RODATA_ATTR = "<h4>Button options:</
 
 const char *html_page_config_gpio_relay_save_title ICACHE_RODATA_ATTR = "Save light state";
 const char *html_page_config_gpio_relay_save_name ICACHE_RODATA_ATTR = "rsv";
-//const char *html_page_config_gpio_relay_state_name ICACHE_RODATA_ATTR = "rst";
-//#endif
 
 const char *html_page_config_blue_led_config_title ICACHE_RODATA_ATTR = "<h4>Blue led:</h4>";
 const char *html_page_config_duty_night_title ICACHE_RODATA_ATTR = "Duty night";
@@ -76,6 +75,9 @@ const char *html_page_config_rctopic_name ICACHE_RODATA_ATTR = "rctopic";
 
 const char *html_page_config_gpio_button ICACHE_RODATA_ATTR = "Button GPIO";
 const char *html_page_config_gpio_button_name ICACHE_RODATA_ATTR = "bpin";
+
+const char *html_page_config_gpio_additional_title ICACHE_RODATA_ATTR = "Additional GPIO";
+const char *html_page_config_gpio_additional_name ICACHE_RODATA_ATTR = "addpin";
 
 // #ifdef USER_CONFIG_LED_GPIO
 // const char *html_page_config_gpio_led ICACHE_RODATA_ATTR = "Led GPIO";
@@ -98,10 +100,10 @@ const char *html_page_config_select_start ICACHE_RODATA_ATTR =  "<select name=\"
 void button_press_handler(void *args);
 
 uint8_t relay_gpio = SONOFF_LIGHT_RELAY_GPIO;
-//relay_state_t relay_state = RELAY_STATE_OFF;
 uint8_t relay_save = 0;
 uint8_t button_gpio = SONOFF_LIGHT_BUTTON_GPIO;
 uint32_t blue_led_gpio = SONOFF_LIGHT_BLUE_LED_GPIO;
+uint32_t add_gpio = GPIO_NUM_MAX;
 
 uint8_t duty_night = DUTY_NIGHT;
 uint8_t duty_day = DUTY_DAY;
@@ -167,7 +169,7 @@ const char *button_types[USR_BUTTON_MAX] ICACHE_RODATA_ATTR =
 typedef enum {
     USR_BUTTON_ACTION_NONE
     , USR_BUTTON_ACTION_LOCAL_GPIO
-    
+    , USR_BUTTON_ACTION_ADD_GPIO
     #ifdef USER_HTTP_CLIENT
     , USR_BUTTON_ACTION_SEND_HTTP_GET
     #endif
@@ -180,7 +182,8 @@ const char *button_actions[USR_BUTTON_ACTION_MAX] ICACHE_RODATA_ATTR =
 {
     "None"
     , "Toggle Light"
-    
+    , "Toggle Add.GPIO"
+
     #ifdef USER_HTTP_CLIENT
     , "Send HTTP"
     #endif
@@ -227,26 +230,19 @@ void user_setup(void *args)
 
     #ifdef CONFIG_COMPONENT_RELAY
 
-    ESP_LOGW(TAG, LOG_FMT("relay_save = %d"), relay_save);
-    //ESP_LOGW(TAG, LOG_FMT("relay_state = %d"), relay_state);
-
     relay_h = relay_create( "Light", relay_gpio, RELAY_LEVEL_HIGH /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ , relay_save);
-    // эту инициализацию состояния перенес в relay
-    //relay_write(relay_h,  (relay_save) ? relay_state : RELAY_STATE_OFF);    
-    
+
     //relay_led_h = relay_create( "Led", blue_led_gpio, RELAY_LEVEL_HIGH /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ , false);
-    //relay_write(relay_led_h,  (relay_save) ? !relay_state : RELAY_STATE_OFF);    
     uint32_t *ch = &blue_led_gpio;
-
     pwm_begin(PWM_FREQ_HZ, 1, ch);
-    //pwm_start();
-    //relay_handle_t relay2_h = relay_create( "red", 15, RELAY_LEVEL_LOW /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ , false);
-    //relay_write(relay2_h,  RELAY_STATE_OFF); 
 
-    //relay_handle_t relay3_h = relay_create( "blue", 13, RELAY_LEVEL_LOW /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ , false);
-    //relay_write(relay3_h,  RELAY_STATE_OFF);
+    if ( GPIO_IS_VALID_GPIO(add_gpio) )
+    {
+        char s[8];
+        sprintf(s, "GPIO %d", add_gpio);
+        relay_add_h = relay_create( s, add_gpio, RELAY_LEVEL_HIGH /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ , false);
+    }
 
-    //button_handle_t btn_g4_h = configure_push_button(GPIO_NUM_4, BUTTON_ACTIVE_HIGH);
     button_handle_t btn_h = configure_push_button(button_gpio, BUTTON_ACTIVE_LOW);
     if (btn_h) 
     {
@@ -404,7 +400,7 @@ static void user_print_button_config(httpd_req_t *req, uint8_t id)
 
     //httpd_resp_sendstr_chunk(req, "</p>");
 
-    if ( button_press_config[id].action > USR_BUTTON_ACTION_LOCAL_GPIO )
+    if ( button_press_config[id].action > USR_BUTTON_ACTION_ADD_GPIO /*USR_BUTTON_ACTION_LOCAL_GPIO*/ )
     {
         sprintf(s, html_page_config_button_value_name, id+1);
         httpd_resp_sendstr_chunk_fmt(req, html_block_data_form_item_label_edit
@@ -461,6 +457,19 @@ void user_web_options(httpd_req_t *req)
                                 );
 
 
+    //===================== Additional GPIO =============================
+    if ( GPIO_IS_VALID_GPIO(add_gpio) ) {
+        itoa(add_gpio, value, 10);    
+    } else {
+        strcpy(value, "");
+    }
+
+    httpd_resp_sendstr_chunk_fmt(req, html_block_data_form_item_label_edit
+                                    , html_page_config_gpio_additional_title // %s label
+                                    , html_page_config_gpio_additional_name   // %s name
+                                    , value   // %d value
+    );
+    //==================================================================
     
     httpd_resp_sendstr_chunk(req, html_page_config_blue_led_config_title);
     itoa(duty_night, value, 10);    
@@ -579,6 +588,7 @@ void user_process_param(httpd_req_t *req, void *args)
     //#endif
 
     http_get_key_uint8_def(req, html_page_config_gpio_button_name, &button_gpio, SONOFF_LIGHT_BUTTON_GPIO);
+    http_get_key_uint8_def(req, html_page_config_gpio_additional_name, &add_gpio, GPIO_NUM_MAX);
     
     relay_save = ( http_get_key_str(req, html_page_config_gpio_relay_save_name, param, 20) == ESP_OK );
     
@@ -649,10 +659,10 @@ ESP_LOGW(TAG, "relay_save = %d", relay_save);
         ESP_LOGW(TAG, "received select item = %s with value %d", param_name, button_press_config[i].action);
 
         sprintf(param_name, html_page_config_button_value_name, i+1);
-        uint8_t sz = button_press_config[i].action <= USR_BUTTON_ACTION_LOCAL_GPIO ? BUTTON_VALUE_INT_SIZE : BUTTON_VALUE_STRING_SIZE;
+        uint8_t sz = button_press_config[i].action <= /*USR_BUTTON_ACTION_LOCAL_GPIO*/ USR_BUTTON_ACTION_ADD_GPIO ? BUTTON_VALUE_INT_SIZE : BUTTON_VALUE_STRING_SIZE;
         button_press_config[i].value = realloc(button_press_config[i].value, sz);
         
-        if ( button_press_config[i].action > USR_BUTTON_ACTION_LOCAL_GPIO /*USR_BUTTON_ACTION_NONE*/) // для LocalGPIO не используем возможность изменить gpio
+        if ( button_press_config[i].action > USR_BUTTON_ACTION_ADD_GPIO /*USR_BUTTON_ACTION_LOCAL_GPIO*/ /*USR_BUTTON_ACTION_NONE*/) // для LocalGPIO не используем возможность изменить gpio
         {
             char buf[100];
             http_get_key_str(req, param_name, buf, 100);         
@@ -690,6 +700,11 @@ void IRAM_ATTR button_press_handler(void *args)
             break;
         }
         
+        case USR_BUTTON_ACTION_ADD_GPIO:
+        {
+            relay_toggle(relay_add_h);
+            break;
+        }
     #ifdef USER_HTTP_CLIENT
         case USR_BUTTON_ACTION_SEND_HTTP_GET:
         {
@@ -716,6 +731,7 @@ void user_load_nvs()
     //nvs_param_u8_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_relay_name, &relay_gpio, SONOFF_LIGHT_RELAY_GPIO);
     //#endif
 
+    nvs_param_u8_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_additional_name, &add_gpio, GPIO_NUM_MAX);
     nvs_param_u8_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_button_name, &button_gpio, SONOFF_LIGHT_BUTTON_GPIO);
     nvs_param_u8_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_relay_save_name, &relay_save, 0);
     
@@ -748,10 +764,10 @@ void user_load_nvs()
         nvs_param_u8_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, param_name, &button_press_config[i].action, 0);
         //ESP_LOGW(TAG, "loaded %s  = %d", param_name, button_press_config[i].action);
 
-        uint8_t sz = button_press_config[i].action <= USR_BUTTON_ACTION_LOCAL_GPIO ? BUTTON_VALUE_INT_SIZE : BUTTON_VALUE_STRING_SIZE;
+        uint8_t sz = button_press_config[i].action <= /*USR_BUTTON_ACTION_LOCAL_GPIO*/ USR_BUTTON_ACTION_ADD_GPIO ? BUTTON_VALUE_INT_SIZE : BUTTON_VALUE_STRING_SIZE;
         button_press_config[i].value = realloc(button_press_config[i].value, sz);
 
-        if ( button_press_config[i].action > USR_BUTTON_ACTION_LOCAL_GPIO /*USR_BUTTON_ACTION_NONE*/ )
+        if ( button_press_config[i].action > USR_BUTTON_ACTION_ADD_GPIO /*USR_BUTTON_ACTION_LOCAL_GPIO*/ /*USR_BUTTON_ACTION_NONE*/ )
         {
             sprintf(param_name, html_page_config_button_value_name, i+1);
             nvs_param_str_load(USER_PARAM_SONOFF_LIGHT_SECTION, param_name, button_press_config[i].value);
@@ -782,6 +798,7 @@ void user_save_nvs()
 
     ESP_LOGW(TAG, LOG_FMT("save %s"), html_page_config_gpio_button_name);
     nvs_param_u8_save(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_button_name, button_gpio);
+    nvs_param_u8_save(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_additional_name, add_gpio);
 
     ESP_LOGW(TAG, LOG_FMT("save %s"), html_page_config_gpio_relay_save_name);
     nvs_param_u8_save(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_relay_save_name, relay_save);
@@ -806,7 +823,7 @@ void user_save_nvs()
         ESP_LOGW(TAG, LOG_FMT("save %s"), param_name);
         nvs_param_u8_save(USER_PARAM_SONOFF_LIGHT_SECTION, param_name, button_press_config[i].action);
 
-        if ( button_press_config[i].action > USR_BUTTON_ACTION_LOCAL_GPIO )
+        if ( button_press_config[i].action > USR_BUTTON_ACTION_ADD_GPIO /*USR_BUTTON_ACTION_LOCAL_GPIO*/ )
         {
             sprintf(param_name, html_page_config_button_value_name, i+1);
             ESP_LOGW(TAG, LOG_FMT("save %s"), param_name);
