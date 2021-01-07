@@ -20,7 +20,7 @@ static const char *TAG = "USER";
 
 relay_handle_t relay_led_h;
 
-#define BUTTON_SHORT_PRESS_DELAY 400
+#define BUTTON_SHORT_PRESS_DELAY 200
 #define BUTTON_SHORT_PRESS_COUNT 3
 
 #define BUTTON_LONG_PRESS_COUNT 2
@@ -117,7 +117,7 @@ typedef struct {
     char rccode[RC_DATA_LEN];
 } rcdata_t;
 
-uint8_t rccode_first[RC_DATA_COUNT];
+uint32_t rccode_ready[RC_DATA_COUNT];
 rcdata_t rcdata[RC_DATA_COUNT];
 
 typedef enum {
@@ -223,6 +223,7 @@ void user_save_nvs();
 
 void switch_local_gpio()
 {
+    ESP_LOGW(TAG, "%s", __func__);
     relay_state = relay_read(relay_h);
     relay_state = !relay_state;
     relay_write(relay_h, relay_state);  
@@ -245,12 +246,9 @@ void user_setup(void *args)
 
     relay_h = relay_create( "Light", relay_gpio, RELAY_LEVEL_LOW /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ , relay_save);
     relay_write(relay_h,  (relay_save) ? relay_state : RELAY_STATE_CLOSE);    
-
-    ESP_LOGW(TAG, LOG_FMT("relay_h = %p"), relay_h);
     
     //relay_led_h = relay_create( "Led", blue_led_gpio, RELAY_LEVEL_HIGH /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ , false);
     //relay_write(relay_led_h,  (relay_save) ? !relay_state : RELAY_STATE_OPEN);    
-    //ESP_LOGW(TAG, LOG_FMT("relay_led_h = %p"), relay_led_h);
     uint32_t *ch = &blue_led_gpio;
 
     pwm_begin(PWM_FREQ_HZ, 1, ch);
@@ -318,17 +316,21 @@ void user_http_init(void *args)
 static void rcdata_recv_cb(char *buf, void *args)
 {
     //uint8_t value = atoi( buf );
-    ESP_LOGW(TAG, "%s: rcdata = %s", __func__, buf);
+    ESP_LOGW(TAG, "%s: rcdata = [%s]", __func__, buf);
     for ( uint8_t i = 0; i < RC_DATA_COUNT; i++)
     {
+        ESP_LOGW(TAG, "check rcdata[%d] = [%s], buf = [%s]", i, rcdata[i].rccode, buf);
         if ( strcmp(buf, rcdata[i].rccode) == 0 )
         {
-            if ( rccode_first[i] == 0 )
+            ESP_LOGW(TAG, "rcdata ready = %d", rccode_ready[i]);
+            if ( rccode_ready[i] >= 2)
             {
                 switch_local_gpio();
             }
-            rccode_first[i] = 0;
+            rccode_ready[i]++;
             break; // достаточно одного из 4-х совпадений по коду 
+        } else {
+            ESP_LOGW(TAG, "rc buf = [%s] not found", buf);
         }
     }
 }
@@ -338,7 +340,7 @@ static void rcdata_recv_cb(char *buf, void *args)
 void user_mqtt_init(void *args)
 {
     // TODO: check topic length and NULL
-    memset(&rccode_first, 1, sizeof(uint8_t) * RC_DATA_COUNT);
+    memset(&rccode_ready, 0, sizeof(uint8_t) * RC_DATA_COUNT);
     mqtt_add_receive_callback(rctopic, 0, rcdata_recv_cb, NULL);
 }
 
@@ -736,14 +738,14 @@ void user_load_nvs()
     nvs_param_u16_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_night_stop_name, &dark_stop, TIME_STOP_NIGHT);
     
     nvs_param_str_load(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_rctopic_name, &rctopic);
-    ESP_LOGW(TAG, "loaded rctopic = %s", rctopic);
+    //ESP_LOGW(TAG, "loaded rctopic = %s", rctopic);
 
     nvs_param_load(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_rcdata_name, &rcdata);
     
-    for ( uint8_t i = 0; i < RC_DATA_COUNT; i++ )
-    {
-        ESP_LOGW(TAG, "loaded rcdata[%d] = %s", i, rcdata[i].rccode);
-    }
+    // for ( uint8_t i = 0; i < RC_DATA_COUNT; i++ )
+    // {
+    //     ESP_LOGW(TAG, "loaded rcdata[%d] = %s", i, rcdata[i].rccode);
+    // }
 
     if ( relay_save ) {
         nvs_param_u8_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_relay_state_name, &relay_state, 0);
@@ -757,7 +759,7 @@ void user_load_nvs()
         char param_name[8];
         sprintf(param_name, USER_SELECT, i);
         nvs_param_u8_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, param_name, &button_press_config[i].action, 0);
-        ESP_LOGW(TAG, "loaded %s  = %d", param_name, button_press_config[i].action);
+        //ESP_LOGW(TAG, "loaded %s  = %d", param_name, button_press_config[i].action);
 
         uint8_t sz = button_press_config[i].action <= USR_BUTTON_ACTION_LOCAL_GPIO ? BUTTON_VALUE_INT_SIZE : BUTTON_VALUE_STRING_SIZE;
         button_press_config[i].value = realloc(button_press_config[i].value, sz);
@@ -767,13 +769,13 @@ void user_load_nvs()
             sprintf(param_name, html_page_config_button_value_name, i+1);
             nvs_param_str_load(USER_PARAM_SONOFF_LIGHT_SECTION, param_name, button_press_config[i].value);
 
-            ESP_LOGW(TAG, "loaded %s  = %s", param_name, button_press_config[i].value);
+            //ESP_LOGW(TAG, "loaded %s  = %s", param_name, button_press_config[i].value);
 
             if ( button_press_config[i].type >= USR_BUTTON_LONG_PRESS_1 )
             {
                 sprintf(param_name, html_page_config_button_delay_name, i+1);
                 nvs_param_u8_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, param_name, &button_press_config[i].delay, 0);
-                ESP_LOGW(TAG, "loaded %s  = %d", param_name, button_press_config[i].delay);
+                //ESP_LOGW(TAG, "loaded %s  = %d", param_name, button_press_config[i].delay);
             }  
         }
         else
