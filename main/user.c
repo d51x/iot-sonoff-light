@@ -1,5 +1,5 @@
 #include "user.h"
-#include "button.h"
+#include "button2.h"
 #include "http_page_tpl.h"
 
 #include "ipwm.h"
@@ -28,11 +28,6 @@ relay_handle_t relay_add_h;
 #define BUTTON_LONG_PRESS_1_DELAY 1
 #if BUTTON_LONG_PRESS_COUNT > 1
 #define BUTTON_LONG_PRESS_2_DELAY 2
-#endif
-
-//#define BUTTON_PRESS_AND_HOLD_COUNT 1
-#ifdef BUTTON_PRESS_AND_HOLD_COUNT
-#define BUTTON_PRESS_AND_HOLD_DELAY 5
 #endif
 
 #define USER_GET_PARAM1_TAG "sl"
@@ -139,10 +134,6 @@ typedef enum {
     , USR_BUTTON_LONG_PRESS_2
     #endif
 
-    #ifdef BUTTON_PRESS_AND_HOLD_COUNT
-    , USR_BUTTON_HOLD
-    #endif
-
     , USR_BUTTON_MAX
 } button_press_type_e;
 
@@ -160,10 +151,6 @@ const char *button_types[USR_BUTTON_MAX] ICACHE_RODATA_ATTR =
 
     #if BUTTON_LONG_PRESS_COUNT > 1
     , "Long2"
-    #endif
-
-    #ifdef BUTTON_PRESS_AND_HOLD_COUNT
-    , "Hold"
     #endif
 };
 typedef enum {
@@ -215,9 +202,6 @@ button_press_type_t button_press_config[USR_BUTTON_MAX] =
     , {USR_BUTTON_LONG_PRESS_2, USR_BUTTON_ACTION_NONE, NULL, 0}
     #endif
 
-    #ifdef BUTTON_PRESS_AND_HOLD_COUNT
-    , {USR_BUTTON_HOLD, USR_BUTTON_ACTION_NONE, NULL, 0}
-    #endif
 };
 
 
@@ -245,49 +229,33 @@ void user_setup(void *args)
         relay_add_h = relay_create( s, add_gpio, RELAY_LEVEL_HIGH /*RELAY_LEVEL_LOW*/ /* RELAY_LEVEL_HIGH*/ , false);
     }
 
-    button_handle_t btn_h = configure_push_button(button_gpio, BUTTON_ACTIVE_LOW);
-    if (btn_h) 
+    //button_handle_t btn_h = configure_push_button(button_gpio, BUTTON_ACTIVE_LOW);
+    button_t *btn = create_button(button_gpio, BUTTON_ACTIVE_LOW);
+    if (btn) 
     {
         // регистрируем коллбек короткого нажатия
+        button_add_short_press(btn, 1, button_press_handler, &button_press_config[USR_BUTTON_SHORT_PRESS_1]);
         
-        button_cb *short_pressed_cb = calloc(BUTTON_SHORT_PRESS_COUNT, sizeof(button_cb));
-        button_press_type_t **short_pressed_args_cb = calloc(BUTTON_SHORT_PRESS_COUNT, sizeof(button_press_type_t*));
-        // заполним массив указателями на функции
-        short_pressed_cb[0] = &button_press_handler;
-        short_pressed_args_cb[0] = &button_press_config[USR_BUTTON_SHORT_PRESS_1];
-
         #if BUTTON_SHORT_PRESS_COUNT > 1 
-            short_pressed_cb[1] = &button_press_handler; 
-            short_pressed_args_cb[1] = &button_press_config[USR_BUTTON_SHORT_PRESS_2];                    
+        button_add_short_press(btn, 2, button_press_handler, &button_press_config[USR_BUTTON_SHORT_PRESS_2]);
         #endif
 
         #if BUTTON_SHORT_PRESS_COUNT > 2    
-            short_pressed_cb[2] = &button_press_handler;
-            short_pressed_args_cb[2] = &button_press_config[USR_BUTTON_SHORT_PRESS_3];     
+        button_add_short_press(btn, 3, button_press_handler, &button_press_config[USR_BUTTON_SHORT_PRESS_3]);
         #endif
 
-        // 1..3 коротких нажатий в течение 500 мсек
-        button_set_on_presscount_cb(btn_h, BUTTON_SHORT_PRESS_DELAY, BUTTON_SHORT_PRESS_COUNT, short_pressed_cb, short_pressed_args_cb);
-
         // сработает при отпускании после X сек не зависимо сколько держали по времени
-        button_add_on_release_cb(btn_h
+        button_add_long_press(  btn
                                 , button_press_config[USR_BUTTON_LONG_PRESS_1].delay > 0 ? button_press_config[USR_BUTTON_LONG_PRESS_1].delay : BUTTON_LONG_PRESS_1_DELAY
                                 , button_press_handler
-                                , (void *)&button_press_config[USR_BUTTON_LONG_PRESS_1]);
+                                , (void *)&button_press_config[USR_BUTTON_LONG_PRESS_1]
+                            );
 
         #if BUTTON_LONG_PRESS_COUNT > 1
-        button_add_on_release_cb(btn_h
+        button_add_long_press(  btn
                                 , button_press_config[USR_BUTTON_LONG_PRESS_2].delay > 0 ? button_press_config[USR_BUTTON_LONG_PRESS_2].delay : BUTTON_LONG_PRESS_2_DELAY
                                 , button_press_handler
                                 , (void *)&button_press_config[USR_BUTTON_LONG_PRESS_2]);        
-        #endif
-
-        // сработает при удержании более X сек
-        #ifdef BUTTON_PRESS_AND_HOLD_COUNT
-        button_add_on_press_cb(btn_h
-                                , button_press_config[USR_BUTTON_HOLD].delay > 0 ? button_press_config[USR_BUTTON_HOLD].delay : BUTTON_PRESS_AND_HOLD_DELAY
-                                , button_press_handler
-                                , (void *)&button_press_config[USR_BUTTON_HOLD]);
         #endif
     }
     #endif
@@ -587,26 +555,27 @@ void user_process_param(httpd_req_t *req, void *args)
     }
 
     //#ifdef USER_CONFIG_RELAY_GPIO
-    //http_get_key_uint8_def(req, html_page_config_gpio_relay_name, &relay_gpio, SONOFF_LIGHT_RELAY_GPIO);
+    //http_get_key_uint8(req, html_page_config_gpio_relay_name, &relay_gpio, SONOFF_LIGHT_RELAY_GPIO);
     //#endif
 
-    http_get_key_uint8_def(req, html_page_config_gpio_button_name, &button_gpio, SONOFF_LIGHT_BUTTON_GPIO);
-    //http_get_key_uint8_def(req, html_page_config_gpio_additional_name, &add_gpio, GPIO_NUM_MAX);
-    memset(param, 0, 20);
-    if ( http_get_key_str(req, html_page_config_gpio_additional_name, param, 20) == ESP_OK ) 
-    {
-        add_gpio = ( strlen(param) > 0 ) ? atoi(param): GPIO_NUM_MAX;
-    } else {
-        add_gpio = GPIO_NUM_MAX;
-    }
+    http_get_key_uint8(req, html_page_config_gpio_button_name, &button_gpio, SONOFF_LIGHT_BUTTON_GPIO);
+    
+    http_get_key_uint8(req, html_page_config_gpio_additional_name, &add_gpio, GPIO_NUM_MAX);
+    // memset(param, 0, 20);
+    // if ( http_get_key_str(req, html_page_config_gpio_additional_name, param, 20) == ESP_OK ) 
+    // {
+    //     add_gpio = ( strlen(param) > 0 ) ? atoi(param): GPIO_NUM_MAX;
+    // } else {
+    //     add_gpio = GPIO_NUM_MAX;
+    // }
     ESP_LOGW(TAG, "%s: add_gpio = %d", __func__, add_gpio);
 
     relay_save = ( http_get_key_str(req, html_page_config_gpio_relay_save_name, param, 20) == ESP_OK );
     
-    http_get_key_uint8_def(req, html_page_config_duty_night_name, &duty_night, DUTY_NIGHT);
-    http_get_key_uint8_def(req, html_page_config_duty_day_name, &duty_day, DUTY_DAY);
-    http_get_key_uint16_def(req, html_page_config_night_start_name, &dark_start, TIME_START_NIGHT);
-    http_get_key_uint16_def(req, html_page_config_night_stop_name, &dark_stop, TIME_STOP_NIGHT);
+    http_get_key_uint8(req, html_page_config_duty_night_name, &duty_night, DUTY_NIGHT);
+    http_get_key_uint8(req, html_page_config_duty_day_name, &duty_day, DUTY_DAY);
+    http_get_key_uint16(req, html_page_config_night_start_name, &dark_start, TIME_START_NIGHT);
+    http_get_key_uint16(req, html_page_config_night_stop_name, &dark_stop, TIME_STOP_NIGHT);
 
     memset(rctopic, 0, RC_TOPIC_LENGTH);
     memset(param, 0, RC_TOPIC_LENGTH);
@@ -641,7 +610,7 @@ void user_process_param(httpd_req_t *req, void *args)
 
 ESP_LOGW(TAG, "relay_save = %d", relay_save);
     //#ifdef USER_CONFIG_LED_GPIO
-    //http_get_key_uint8_def(req, html_page_config_gpio_led_name, &blue_led_gpio, SONOFF_LIGHT_BLUE_LED_GPIO);
+    //http_get_key_uint8(req, html_page_config_gpio_led_name, &blue_led_gpio, SONOFF_LIGHT_BLUE_LED_GPIO);
     //#endif
 
     // relpin=12&btnpin=4&ledpin=13&sel0=1&selval1=12&sel1=1&selval2=13&sel2=0&selval3=%3Cnull%3E&sel3=1&selval4=12&seldel4=1&sel4=1&selval5=13&seldel5=2&sel5=0&selval6=%3Cnull%3E&seldel6=0&st=usr1
@@ -665,7 +634,7 @@ ESP_LOGW(TAG, "relay_save = %d", relay_save);
     {
         char param_name[8];
         sprintf(param_name, USER_SELECT, i);
-        http_get_key_uint8_def(req, param_name, &button_press_config[i].action, 0);
+        http_get_key_uint8(req, param_name, &button_press_config[i].action, 0);
 
         ESP_LOGW(TAG, "received select item = %s with value %d", param_name, button_press_config[i].action);
 
@@ -688,7 +657,7 @@ ESP_LOGW(TAG, "relay_save = %d", relay_save);
         if ( button_press_config[i].type >= USR_BUTTON_LONG_PRESS_1 )
         {
             sprintf(param_name, html_page_config_button_delay_name, i+1);   
-            http_get_key_uint8_def(req, param_name, &button_press_config[i].delay, 0);
+            http_get_key_uint8(req, param_name, &button_press_config[i].delay, 0);
 
             ESP_LOGW(TAG, "received item %s with value %d", param_name, button_press_config[i].delay);
         }
