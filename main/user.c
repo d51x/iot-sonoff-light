@@ -236,6 +236,8 @@ void user_setup(void *args)
     uint32_t *ch = &blue_led_gpio;
     pwm_begin(PWM_FREQ_HZ, 1, ch);
 
+    ESP_LOGW(TAG, "%s: add_gpio = %d", __func__, add_gpio);
+
     if ( GPIO_IS_VALID_GPIO(add_gpio) )
     {
         char s[8];
@@ -464,6 +466,7 @@ void user_web_options(httpd_req_t *req)
         strcpy(value, "");
     }
 
+    ESP_LOGW(TAG, "%s: add_gpio = %d, value = %s", __func__, add_gpio, value);
     httpd_resp_sendstr_chunk_fmt(req, html_block_data_form_item_label_edit
                                     , html_page_config_gpio_additional_title // %s label
                                     , html_page_config_gpio_additional_name   // %s name
@@ -588,8 +591,16 @@ void user_process_param(httpd_req_t *req, void *args)
     //#endif
 
     http_get_key_uint8_def(req, html_page_config_gpio_button_name, &button_gpio, SONOFF_LIGHT_BUTTON_GPIO);
-    http_get_key_uint8_def(req, html_page_config_gpio_additional_name, &add_gpio, GPIO_NUM_MAX);
-    
+    //http_get_key_uint8_def(req, html_page_config_gpio_additional_name, &add_gpio, GPIO_NUM_MAX);
+    memset(param, 0, 20);
+    if ( http_get_key_str(req, html_page_config_gpio_additional_name, param, 20) == ESP_OK ) 
+    {
+        add_gpio = ( strlen(param) > 0 ) ? atoi(param): GPIO_NUM_MAX;
+    } else {
+        add_gpio = GPIO_NUM_MAX;
+    }
+    ESP_LOGW(TAG, "%s: add_gpio = %d", __func__, add_gpio);
+
     relay_save = ( http_get_key_str(req, html_page_config_gpio_relay_save_name, param, 20) == ESP_OK );
     
     http_get_key_uint8_def(req, html_page_config_duty_night_name, &duty_night, DUTY_NIGHT);
@@ -732,6 +743,8 @@ void user_load_nvs()
     //#endif
 
     nvs_param_u8_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_additional_name, &add_gpio, GPIO_NUM_MAX);
+    ESP_LOGW(TAG, "%s: add_gpio = %d", __func__, add_gpio);
+
     nvs_param_u8_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_button_name, &button_gpio, SONOFF_LIGHT_BUTTON_GPIO);
     nvs_param_u8_load_def(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_relay_save_name, &relay_save, 0);
     
@@ -798,6 +811,8 @@ void user_save_nvs()
 
     ESP_LOGW(TAG, LOG_FMT("save %s"), html_page_config_gpio_button_name);
     nvs_param_u8_save(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_button_name, button_gpio);
+
+    ESP_LOGW(TAG, "%s: add_gpio = %d", __func__, add_gpio);
     nvs_param_u8_save(USER_PARAM_SONOFF_LIGHT_SECTION, html_page_config_gpio_additional_name, add_gpio);
 
     ESP_LOGW(TAG, LOG_FMT("save %s"), html_page_config_gpio_relay_save_name);
